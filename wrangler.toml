@@ -1,0 +1,14 @@
+#:schema https://raw.githubusercontent.com/cloudflare/wrangler/main/packages/wrangler/config-schema.json
+name = "github-mcp-server"
+main = "src/worker/index.ts"
+compatibility_date = "2024-03-01"
+
+
+
+# GITHUB_CLIENT_ID, GITHUB_USERNAME, GITHUB_TOKEN, AUTH_TOKEN, and GITHUB_CLIENT_SECRET 
+# should be set via the Cloudflare Dashboard or 'wrangler secret put'
+
+[[kv_namespaces]]
+binding = "MCP_CACHE"
+id = "xxxxxxxxxxxx" # Replace with your KV ID after 'wrangler kv:namespace create MCP_CACHE'
+

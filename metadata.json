@@ -1,0 +1,5 @@
+{
+  "name": "GitHub MCP Worker & PWA",
+  "description": "A Cloudflare Worker-based MCP server for GitHub automation with a mobile PWA interface.",
+  "requestFramePermissions": []
+}
