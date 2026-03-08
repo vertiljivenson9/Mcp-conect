@@ -3,42 +3,40 @@ import { MCPServer } from './mcp-server.ts';
 
 export interface Env {
   GITHUB_TOKEN: string;
-  GITHUB_USERNAME: string;
   AUTH_TOKEN: string;
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
-  MCP_CACHE: any;
+  MCP_CACHE: KVNamespace;
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // CORS Headers
+    // === CORS Headers ===
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
-
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // Health Check
+    // === Health Check ===
     if (url.pathname === '/health') {
       return new Response(JSON.stringify({ status: 'ok' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // GitHub OAuth: Login
+    // === GitHub OAuth: Login ===
     if (url.pathname === '/auth/github') {
       const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${env.GITHUB_CLIENT_ID}&scope=repo,user&redirect_uri=${url.origin}/auth/callback`;
       return Response.redirect(githubAuthUrl);
     }
 
-    // GitHub OAuth: Callback
+    // === GitHub OAuth: Callback ===
     if (url.pathname === '/auth/callback') {
       const code = url.searchParams.get('code');
       if (!code) return new Response('No code provided', { status: 400 });
@@ -59,7 +57,7 @@ export default {
       const tokenData: any = await tokenResponse.json();
       const accessToken = tokenData.access_token;
 
-      // Get user info to get the username
+      // Obtener info de usuario
       const userResponse = await fetch('https://api.github.com/user', {
         headers: {
           'Authorization': `token ${accessToken}`,
@@ -90,22 +88,35 @@ export default {
       });
     }
 
-    // Auth Check
+    // === Auth Check ===
     const authHeader = request.headers.get('Authorization');
-    const isStaticAuth = authHeader === `Bearer ${env.AUTH_TOKEN}`;
-    const isGithubAuth = authHeader?.startsWith('Bearer gh'); 
-    
-    if (!isStaticAuth && !isGithubAuth) {
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
       return new Response('Unauthorized', { status: 401, headers: corsHeaders });
     }
 
-    // SSE Endpoint
+    // Validación token: STATIC AUTH o GitHub OAuth
+    const isStaticAuth = token === env.AUTH_TOKEN;
+    let githubToken = env.GITHUB_TOKEN; // por defecto
+    if (!isStaticAuth) {
+      // Verificar que el token de GitHub sea válido
+      try {
+        const userRes = await fetch('https://api.github.com/user', {
+          headers: { Authorization: `token ${token}`, 'User-Agent': 'Cloudflare-Worker-MCP-Server' }
+        });
+        if (!userRes.ok) throw new Error('GitHub token invalid');
+        githubToken = token; // usar el token OAuth para MCPServer
+      } catch {
+        return new Response('Unauthorized', { status: 401, headers: corsHeaders });
+      }
+    }
+
+    // === SSE Endpoint ===
     if (url.pathname === '/sse') {
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
       const encoder = new TextEncoder();
 
-      // Send endpoint event
       const endpointUrl = `${url.origin}/messages`;
       writer.write(encoder.encode(`event: endpoint\ndata: ${endpointUrl}\n\n`));
 
@@ -119,23 +130,17 @@ export default {
       });
     }
 
-    // Messages Endpoint
+    // === Messages Endpoint ===
     if (url.pathname === '/messages' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const authHeader = request.headers.get('Authorization');
-        const token = authHeader?.replace('Bearer ', '') || env.GITHUB_TOKEN;
-        
-        // If it's the static token, use the env GITHUB_TOKEN
-        // If it's a different token, assume it's a GitHub token from OAuth
-        const githubToken = token === env.AUTH_TOKEN ? env.GITHUB_TOKEN : token;
 
         const github = new GitHubClient({
           token: githubToken,
-          username: env.GITHUB_USERNAME // In a multi-user setup, we'd fetch this from the token
+          username: 'default' // o extraer del token OAuth si quieres multiusuario
         });
-        const mcp = new MCPServer(github, env.GITHUB_USERNAME);
-        
+        const mcp = new MCPServer(github, 'default');
+
         const response = await mcp.handleRequest(body as any);
         return new Response(JSON.stringify(response), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
