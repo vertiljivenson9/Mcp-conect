@@ -10,5 +10,5 @@ compatibility_date = "2024-03-01"
 
 [[kv_namespaces]]
 binding = "MCP_CACHE"
-id = "xxxxxxxxxxxx" # Replace with your KV ID after 'wrangler kv:namespace create MCP_CACHE'
+id = "98a89168e6304961bd9503d68b029210" # Replace with your KV ID after 'wrangler kv:namespace create MCP_CACHE'
 
